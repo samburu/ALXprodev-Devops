@@ -1,20 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Directory to save Pokémon JSON files
 OUTPUT_DIR="pokemon_data"
-mkdir -p "$OUTPUT_DIR"
-
-# List of Pokémon to retrieve
+ERROR_LOG="errors.txt"
 POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 
-# Loop through each Pokémon and fetch data
-for pokemon in "${POKEMON_LIST[@]}"; do
-    echo "Fetching data for $pokemon..."
-    if curl -s -f "https://pokeapi.co/api/v2/pokemon/$pokemon" -o "$OUTPUT_DIR/${pokemon}.json"; then
-        echo "Saved data to $OUTPUT_DIR/${pokemon}.json ✅"
-    else
-        echo "Failed to fetch data for $pokemon" >&2
+mkdir -p "$OUTPUT_DIR"
+: > "$ERROR_LOG"  # Clear error log at start
+
+fetch_pokemon() {
+    local pokemon="$1"
+    local url="https://pokeapi.co/api/v2/pokemon/$pokemon"
+    local output_file="$OUTPUT_DIR/${pokemon}.json"
+
+    local attempt=1
+    local max_attempts=3
+    local success=false
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Fetching data for $pokemon (Attempt $attempt)..."
+        if curl -s -f "$url" -o "$output_file"; then
+            echo "Saved data to $output_file ✅"
+            success=true
+            break
+        else
+            echo "Attempt $attempt failed for $pokemon" >&2
+            sleep 2
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    if [ "$success" = false ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - Failed to fetch data for $pokemon after $max_attempts attempts" >> "$ERROR_LOG"
     fi
-    sleep 2  # Delay to avoid API rate limits
+}
+
+# Loop through Pokémon list
+for pokemon in "${POKEMON_LIST[@]}"; do
+    fetch_pokemon "$pokemon"
+    sleep 2  # Avoid hitting API rate limits
 done
