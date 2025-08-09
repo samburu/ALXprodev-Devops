@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Script: data_extraction_automation-0x01
+# Description: Extracts name, height, weight, and type from data.json
+# Requirements: jq, awk, sed
+
+INPUT_FILE="data.json"
+
+# Extract fields using jq
+name=$(jq -r '.name' "$INPUT_FILE" | sed 's/.*/\u&/') # Capitalize first letter
+height=$(jq -r '.height' "$INPUT_FILE")
+weight=$(jq -r '.weight' "$INPUT_FILE")
+type=$(jq -r '.types[0].type.name' "$INPUT_FILE" | sed 's/.*/\u&/')
+
+# Convert height from decimetres to meters, weight from hectograms to kilograms
+height_m=$(awk "BEGIN {printf \"%.1f\", $height/10}")
+weight_kg=$(awk "BEGIN {printf \"%.0f\", $weight/10}")
+
+# Print in human-readable format
+echo "$name is of type $type, weighs ${weight_kg}kg, and is ${height_m}m tall."
