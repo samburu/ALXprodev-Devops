@@ -3,29 +3,29 @@ set -euo pipefail
 
 INPUT_FILE="data.json"
 
-# Basic requirements
+# Check for required tools and files
 command -v jq >/dev/null 2>&1 || { echo "jq is required but not installed" >&2; exit 1; }
 [ -s "$INPUT_FILE" ] || { echo "Input file '$INPUT_FILE' not found or empty" >&2; exit 1; }
 
-# Extract raw values with jq
+# Extract raw values using jq
 raw_name=$(jq -r '.name // empty' "$INPUT_FILE")
 raw_type=$(jq -r '.types[0].type.name // empty' "$INPUT_FILE")
 height=$(jq -r '.height // empty' "$INPUT_FILE")
 weight=$(jq -r '.weight // empty' "$INPUT_FILE")
 
-# Validate extracted values
+# Validate that all required fields exist
 if [ -z "$raw_name" ] || [ -z "$raw_type" ] || [ -z "$height" ] || [ -z "$weight" ]; then
   echo "Missing required fields in $INPUT_FILE" >&2
   exit 1
 fi
 
-# Capitalize name and type (uses awk)
-name=$(echo "$raw_name" | awk '{printf toupper(substr($0,1,1)) tolower(substr($0,2))}')
-type=$(echo "$raw_type" | awk '{printf toupper(substr($0,1,1)) tolower(substr($0,2))}')
+# Capitalize first letter using sed
+name=$(echo "$raw_name" | sed 's/.*/\u&/')
+type=$(echo "$raw_type" | sed 's/.*/\u&/')
 
-# Convert units: height decimetres -> meters, weight hectograms -> kilograms
+# Convert units
 formatted_height=$(awk "BEGIN {printf \"%.1f\", $height/10}")
 formatted_weight=$(awk "BEGIN {printf \"%.0f\", $weight/10}")
 
-# EXACT output string expected by the grader (do NOT change variable names or formatting)
+# EXACT output format expected
 echo "$name is of type $type, weighs ${formatted_weight}kg, and is ${formatted_height}m tall."
