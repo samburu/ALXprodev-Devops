@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OUTPUT_DIR="pokemon_data"
+ERROR_LOG="errors.txt"
+POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
+
+mkdir -p "$OUTPUT_DIR"
+: > "$ERROR_LOG"  # Clear error log at start
+
+fetch_pokemon() {
+    local pokemon="$1"
+    local url="https://pokeapi.co/api/v2/pokemon/$pokemon"
+    local output_file="$OUTPUT_DIR/${pokemon}.json"
+
+    echo "Fetching data for $pokemon..."
+    if curl -s -f "$url" -o "$output_file"; then
+        echo "Saved data to $output_file ✅"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - Failed to fetch data for $pokemon" >> "$ERROR_LOG"
+    fi
+}
+
+# Launch all fetches in parallel
+for pokemon in "${POKEMON_LIST[@]}"; do
+    fetch_pokemon "$pokemon" &
+done
+
+# Wait for all background jobs to complete
+wait
+echo "All Pokémon data fetched."
