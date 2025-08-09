@@ -1,31 +1,88 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 OUTPUT_DIR="pokemon_data"
 ERROR_LOG="errors.txt"
 POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 
 mkdir -p "$OUTPUT_DIR"
-: > "$ERROR_LOG"  # Clear error log at start
+: > "$ERROR_LOG"
 
-fetch_pokemon() {
-    local pokemon="$1"
-    local url="https://pokeapi.co/api/v2/pokemon/$pokemon"
-    local output_file="$OUTPUT_DIR/${pokemon}.json"
+pids=()
+declare -A pid_to_name
 
-    echo "Fetching data for $pokemon..."
-    if curl -s -f "$url" -o "$output_file"; then
-        echo "Saved data to $output_file ✅"
-    else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') - Failed to fetch data for $pokemon" >> "$ERROR_LOG"
+cleanup() {
+  echo "Cleaning up background jobs..."
+  for pid in "${pids[@]:-}"; do
+    # if process still running, terminate it
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Killing PID $pid (${pid_to_name[$pid]:-unknown})"
+      kill "$pid" 2>/dev/null || true
     fi
+  done
+  # wait for any children to exit
+  wait >/dev/null 2>&1 || true
 }
 
-# Launch all fetches in parallel
+# Ensure background jobs are killed on interrupt/terminate
+trap 'cleanup; exit 1' INT TERM
+
+fetch_pokemon() {
+  local pokemon="$1"
+  local url="https://pokeapi.co/api/v2/pokemon/$pokemon"
+  local output_file="$OUTPUT_DIR/${pokemon}.json"
+  local attempt=1 max_attempts=3
+
+  while [ $attempt -le $max_attempts ]; do
+    echo "Fetching data for $pokemon (Attempt $attempt)..."
+    if curl -s -f "$url" -o "$output_file"; then
+      echo "Saved data to $output_file ✅"
+      return 0
+    else
+      echo "Attempt $attempt failed for $pokemon" >&2
+      sleep 2
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - Failed to fetch data for $pokemon after $max_attempts attempts" >> "$ERROR_LOG"
+  return 1
+}
+
+# Launch fetches in background and record PIDs
 for pokemon in "${POKEMON_LIST[@]}"; do
-    fetch_pokemon "$pokemon" &
+  fetch_pokemon "$pokemon" &
+  pid=$!
+  pids+=("$pid")
+  pid_to_name[$pid]="$pokemon"
 done
 
-# Wait for all background jobs to complete
-wait
-echo "All Pokémon data fetched."
+# Monitor background jobs. If any job fails, kill remaining ones.
+overall_status=0
+for pid in "${pids[@]}"; do
+  if wait "$pid"; then
+    echo "Job ${pid_to_name[$pid]} (PID $pid) completed successfully."
+  else
+    echo "Job ${pid_to_name[$pid]} (PID $pid) failed."
+    overall_status=1
+    # kill other still-running PIDs
+    for p in "${pids[@]}"; do
+      if [ "$p" -ne "$pid" ] && kill -0 "$p" 2>/dev/null; then
+        echo "Killing remaining job PID $p (${pid_to_name[$p]})"
+        kill "$p" 2>/dev/null || true
+      fi
+    done
+    break
+  fi
+done
+
+# Remove trap and wait for any remaining children
+trap - INT TERM
+wait >/dev/null 2>&1 || true
+
+if [ $overall_status -eq 0 ]; then
+  echo "All Pokémon data fetched."
+else
+  echo "One or more fetches failed. See $ERROR_LOG for details."
+  exit 1
+fi
